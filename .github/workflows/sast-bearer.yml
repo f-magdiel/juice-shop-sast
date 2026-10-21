@@ -1,0 +1,53 @@
+name: SAST Bearer # Nombre que se muestra en la pestaña Actions
+
+on: # Eventos que disparan el workflow
+  push: # Cuando alguien hace push...
+    branches: [main] # ...a la rama main
+  pull_request: # Cuando se abre o actualiza un Pull Request...
+    branches: [main] # ...cuyo destino es main
+  workflow_dispatch: # Permite ejecutarlo manualmente desde la pestaña Actions
+
+permissions: # Permisos mínimos del GITHUB_TOKEN
+  contents: read # Solo lectura del código del repositorio
+  security-events: write # Necesario para subir resultados a Security > Code scanning
+
+jobs: # Lista de trabajos del workflow
+  bearer: # Identificador del único job
+    name: Escaneo SAST con Bearer # Nombre legible del job
+    runs-on: ubuntu-latest # Ejecuta en un runner Linux hospedado por GitHub
+
+    steps: # Pasos del job, se ejecutan en orden
+      - name: Descargar el código # Paso 1: obtener el código fuente
+        uses: actions/checkout@v4 # Acción oficial que clona el repositorio en el runner
+
+      - name: Bearer - reporte SARIF # Paso 2: escaneo con salida SARIF
+        uses: bearer/bearer-action@v2 # Acción oficial de Bearer CLI
+        with: # Parámetros de la acción
+          path: . # Escanea todo el repositorio
+          format: sarif # Formato que entiende GitHub Code scanning
+          output: bearer-results.sarif # Archivo donde se guarda el reporte
+          exit-code: 0 # No falla el paso aunque haya hallazgos (Bearer sale con código 0)
+          diff: false # Escaneo completo, no solo los archivos cambiados en el PR
+
+      - name: Bearer - reporte HTML # Paso 3: segundo escaneo con salida HTML
+        uses: bearer/bearer-action@v2 # Misma acción de Bearer
+        with: # Parámetros de la acción
+          path: . # Escanea todo el repositorio
+          format: html # Reporte legible en el navegador
+          output: bearer-results.html # Archivo donde se guarda el reporte
+          exit-code: 0 # No falla el paso aunque haya hallazgos
+          diff: false # Escaneo completo del repositorio
+
+      - name: Subir SARIF a Code scanning # Paso 4: publicar hallazgos en GitHub
+        if: always() # Se ejecuta siempre, incluso si un paso anterior falló
+        uses: github/codeql-action/upload-sarif@v4 # Acción oficial para subir SARIF
+        with: # Parámetros de la acción
+          sarif_file: bearer-results.sarif # Archivo SARIF generado por Bearer
+          category: bearer # Etiqueta para distinguir estos resultados de otras herramientas
+
+      - name: Guardar reporte HTML como artefacto # Paso 5: reporte descargable
+        if: always() # Se ejecuta siempre, aunque Bearer haya encontrado vulnerabilidades
+        uses: actions/upload-artifact@v4 # Acción oficial para guardar artefactos
+        with: # Parámetros de la acción
+          name: bearer-html-report # Nombre del artefacto en la página de la ejecución
+          path: bearer-results.html # Archivo que se incluye en el artefacto
